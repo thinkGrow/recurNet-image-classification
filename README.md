@@ -1,14 +1,14 @@
 #### Run Train:
 <!-- --device cuda -->
 ```terminal
-python train.py --batch_size 8 --num_epochs 4 --lr 1e-4 --num_workers 3  --device cpu --save_dir results --save_interval 2
+python train.py --batch_size 8 --num_epochs 4 --lr 1e-4 --num_workers 3  --device cpu --save_dir results --save_interval 2 --sample_size no
 ```
 
 #### Run Test:
 
 ```terminal
 python test.py --batch_size 16 --num_epochs 2 --num_workers 4 --save_dir output --confusion_dir confusion --model_dir results/run_12/
-!python3 test.py --batch_size 16 --num_epochs 2 --num_workers 4 --save_dir output --confusion_dir confusion --model_dir results/run_12/
+!python3 test.py --batch_size 16 --num_epochs 2 --num_workers 4 --save_dir output --confusion_dir confusion --model_dir results/run_12/ 
 ```
 
 #### Run Tensorboard:

@@ -13,6 +13,7 @@ import torch.optim as optim
 import tqdm
 import torchvision
 import seaborn as sns
+from torch.utils.data import random_split
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
@@ -102,6 +103,8 @@ def test(
         # Concatenate the batches to obtain the complete x_test and y_test
         data = torch.cat(x_test_batches, dim=0)
         targets = torch.cat(y_test_batches, dim=0)
+
+    
 
     # Create model.
     model = RecurCNN(

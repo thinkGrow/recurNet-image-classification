@@ -11,6 +11,10 @@ import torch.nn as nn
 import torch.optim as optim
 import tqdm
 import torchvision
+import numpy as np
+import scikitplot as skplt
+import matplotlib.pyplot as plt
+
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
@@ -34,7 +38,6 @@ def train(
     # data_dir: str,
     # scale_factor: int = 4,
     # patch_size: int = 48,
-    PYTORCH_MPS_HIGH_WATERMARK_RATIO: float = "0.0",
     dataset: str = "CIFAR10",
     batch_size: int = 8,
     num_epochs: int = 5,
@@ -43,6 +46,7 @@ def train(
     device: str = "cpu",
     save_dir: str = "weights",
     save_interval: int = 10,
+    sample_size: str = "no"
     # torch.mps.set_per_process_memory_fraction(0.0)
 
 ) -> None:
@@ -92,16 +96,41 @@ def train(
 
         test_loader = DataLoader(dataset=dataset_test, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
 
-        # Separate the features (x_test) and labels (y_test) in batches
-        x_train_batches = []
-        y_train_batches = []
-        for images, labels in train_loader:
-            x_train_batches.append(images)
-            y_train_batches.append(labels)
+        # If sample size is no, model will train the entire dataset, else: model will only train for 100 data (images)
+        if sample_size == "no":
+            # Separate the features (x_test) and labels (y_test) in batches
+            x_train_batches = []
+            y_train_batches = []
+            for images, labels in train_loader:
+                x_train_batches.append(images)
+                y_train_batches.append(labels)
 
-        # Concatenate the batches to obtain the complete x_train and y_train
-        x_train = torch.cat(x_train_batches, dim=0)
-        y_train = torch.cat(y_train_batches, dim=0)
+            # Concatenate the batches to obtain the complete x_train and y_train
+            x_train = torch.cat(x_train_batches, dim=0)
+            y_train = torch.cat(y_train_batches, dim=0)
+        else:
+            # if sample size
+            # Specify the size of the sample you want to take
+            sample_size = 100
+
+            # Take a random sample from the training dataset
+            sample_dataset_train, _ = torch.utils.data.random_split(dataset_train, [sample_size, len(dataset_train) - sample_size])
+            # Create a data loader for the sample training dataset
+            batch_size = 16
+            num_workers = 5
+            sample_train_loader = DataLoader(dataset=sample_dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+            
+
+            # Separate the features (x_test) and labels (y_test) in batches
+            x_train_batches_sample = []
+            y_train_batches_sample = []
+            for images, labels in sample_train_loader:
+                x_train_batches_sample.append(images)
+                y_train_batches_sample.append(labels)
+            # Concatenate the batches to obtain the complete x_test and y_test
+            x_train = torch.cat(x_train_batches_sample, dim=0)
+            y_train = torch.cat(y_train_batches_sample, dim=0)
+
 
         # Separate the features (x_test) and labels (y_test) in batches
         x_test_batches = []
@@ -114,6 +143,10 @@ def train(
         x_test = torch.cat(x_test_batches, dim=0)
         y_test = torch.cat(y_test_batches, dim=0)
 
+
+
+
+
     # Create model.
     model = RecurCNN(
         width=32
@@ -122,11 +155,7 @@ def train(
     # Create criterion.
     criterion_mse = nn.MSELoss()
     criterion_cel = nn.CrossEntropyLoss(
-        # device=device
     )
-    # criterion_percp = VGG16PerceptualLoss(
-    #     device=device
-    # )
 
     # Create optimizer.
     optimizer = optim.Adam(
@@ -136,11 +165,11 @@ def train(
 
     # run version
     run_version = 0
-    while os.path.exists(os.path.join(save_dir, f"run_{run_version}")):
+    while os.path.exists(os.path.join(save_dir, f"run_{run_version}_epoch_{num_epochs}_num_workers_{num_workers}")):
         run_version += 1
 
     # Create save directory.
-    save_dir = os.path.join(save_dir, f"run_{run_version}")
+    save_dir = os.path.join(save_dir, f"run_{run_version}_epoch_{num_epochs}_num_workers_{num_workers}")
 
     # Create save directory if not exists.
     if not os.path.exists(save_dir):
@@ -150,31 +179,24 @@ def train(
     writer = SummaryWriter(log_dir=save_dir)
 
     
-    # Test
+    # Train
     best_loss = float("inf")
     for epoch in range(num_epochs):
         running_loss = 0.0
+        running_accuracy_train = 0.0
+        running_accuracy_test = 0.0
         loop = tqdm.tqdm(train_loader, total=len(train_loader), leave=False)
 
-
-        # for lr, hr in loop:
         # for batch_idx, (data, targets) in enumerate(train_loader):
-        for data, targets in loop:
-
-            # print(data.shape)
-            # print(targets.shape)
-            # Move to device.
-            data = data.to(device)
-            targets = targets.to(device)
-
-            # print(data.shape)
-            # print(targets.shape)
+        for x_train, y_train in loop:
+            x_train = x_train.to(device)
+            y_train = y_train.to(device)
 
             # Forward.
-            scores = model(data)
+            scores = model(x_train)
 
             # Calculate loss.
-            loss = criterion_cel(scores, targets)
+            loss = criterion_cel(scores, y_train)
 
             # Backward.
             optimizer.zero_grad()
@@ -189,88 +211,91 @@ def train(
             # Update running loss.
             running_loss += loss.item()
 
-            # Check accuracy
-            # acc_calc(test_loader, model)
-        num_corrects = 0
-        num_samples = 0
+        
+        # Check accuracy    
+        num_corrects_train = 0
+        num_samples_train = 0
+
+        # calculations for accuracy
+        _, predictions_train = scores.max(1)
+        num_corrects_train += (predictions_train == y_train).sum()
+        num_samples_train += predictions_train.size(0)
+
+        #conclusion
+        accuracy_train = num_corrects_train/num_samples_train
+        running_accuracy_train += accuracy_train.item()
+        precision_train = precision_score(y_train.cpu(), predictions_train.cpu(), average="weighted", zero_division=0)
+        recall_train = recall_score(y_train.cpu(), predictions_train.cpu(), average="weighted", zero_division=0)
+        f1_train = f1_score(y_train.cpu(), predictions_train.cpu(), average=None, zero_division=0)
+        cm_train = confusion_matrix(y_train.cpu(), predictions_train.cpu(),  labels=[0,1,2,3,4,5,6,7,8,9] )
+        # Normalize the confusion matrix
+        cm_train = cm_train.astype('float') / cm_train.sum(axis=1)[:, np.newaxis]
+        # Plot confusion matrix
+        fig, ax = plt.subplots()
+        im_train = ax.imshow(cm_train, cmap='Blues')
+        # Customize plot settings
+        classes = [f'Class {i}' for i in range(10)]
+        ax.set(xticks=np.arange(10),
+            yticks=np.arange(10),
+            xticklabels=classes,
+            yticklabels=classes,
+            xlabel='Predicted label',
+            ylabel='True label',
+            title='Confusion Matrix')
+        # Loop over data dimensions and create text annotations
+        for i in range(10):
+            for j in range(10):
+                ax.text(j, i, f'{cm_train[i, j]:.2f}',
+                        ha="center", va="center", color="white")
+        # Adjust layout to fit the colorbar
+        fig.tight_layout()
+        plt.colorbar(im_train)
+
+        # Convert the plot to an image
+        fig.canvas.draw()
+        image_train = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
+        image_train = image_train.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+        print(f"\n Epoch no.: {epoch+1}" )
+        print(f"Accuracy Train = {accuracy_train*100:.2f}; Received {num_corrects_train}/{num_samples_train}")
+        print(f"Precision Train = {precision_train} and Recall Train = {recall_train} \n f1 Train = {f1_train} \n")
 
         best_loss = float("inf")
         # for epoch in range(num_epochs):
-        running_loss = 0.0
+        running_loss_test = 0.0
 
         model.eval()  
         with torch.no_grad():
             # CIFAR-10 labels
             # send the data to the device
-            x_train = x_train.to(device)
-            y_train = y_train.to(device)
-            x_test = x_test.to(device)
-            y_test = y_test.to(device)
 
+            loop_test = tqdm.tqdm(test_loader, total=len(test_loader), leave=False)
 
-            # calculations for accuracy
-            _, predictions_train = scores.max(1)
-            num_corrects += (predictions_train == y_train).sum()
-            num_samples += predictions_train.size(0)
-
-            #conclusion
-            accuracy_train = num_corrects/num_samples
-            running_accuracy_train += accuracy_train.item()
-            precision_train = precision_score(y_train.cpu(), predictions_train.cpu(), average="weighted", zero_division=0)
-            recall_train = recall_score(y_train.cpu(), predictions_train.cpu(), average="weighted", zero_division=0)
-            f1_train = f1_score(y_train.cpu(), predictions_train.cpu(), average=None, zero_division=0)
-            cm_train = confusion_matrix(y_train, predictions_train,  labels=[0,1,2,3,4,5,6,7,8,9] )
-            # Normalize the confusion matrix
-            cm_train = cm_train.astype('float') / cm_train.sum(axis=1)[:, np.newaxis]
-            # Plot confusion matrix
-            fig, ax = plt.subplots()
-            im_train = ax.imshow(cm_train, cmap='Blues')
-            # Customize plot settings
-            classes = [f'Class {i}' for i in range(10)]
-            ax.set(xticks=np.arange(10),
-                yticks=np.arange(10),
-                xticklabels=classes,
-                yticklabels=classes,
-                xlabel='Predicted label',
-                ylabel='True label',
-                title='Confusion Matrix')
-            # Loop over data dimensions and create text annotations
-            for i in range(10):
-                for j in range(10):
-                    ax.text(j, i, f'{cm_train[i, j]:.2f}',
-                            ha="center", va="center", color="white")
-            # Adjust layout to fit the colorbar
-            fig.tight_layout()
-            plt.colorbar(im_train)
-
-            # Convert the plot to an image
-            fig.canvas.draw()
-            image_train = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
-            image_train = image_train.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-            print(f"\n Epoch no.: {epoch+1}" )
-            print(f"Accuracy Train = {accuracy_train*100:.2f}; Received {num_corrects}/{num_samples}")
-            print(f"Precision Train = {precision_train} and Recall Train = {recall_train} \n f1 Train = {f1_train} \n")
 
             ###Test###
+            for x_test, y_test in loop_test:
+                # forward
+                x_test = x_test.to(device)
+                y_test = y_test.to(device)
+                scores = model(x_test)
 
-            # forward
-            scores = model(x_test)
 
-            # calculations for accuracy
+            num_corrects_test = 0
+            num_samples_test = 0
+                # calculations for accuracy
             _, predictions_test = scores.max(1)
-            num_corrects += (predictions_test == y_test).sum()
-            num_samples += predictions_test.size(0)
+            num_corrects_test += (predictions_test == y_test).sum()
+            num_samples_test += predictions_test.size(0)
 
-            #conclusion
+                #conclusion
 
-            accuracy_test = num_corrects/num_samples
+            accuracy_test = num_corrects_test/num_samples_test
             running_accuracy_test += accuracy_test.item()
             precision_test = precision_score(y_test.cpu(), predictions_test.cpu(), average="weighted", zero_division=0)
             recall_test = recall_score(y_test.cpu(), predictions_test.cpu(), average="weighted", zero_division=0)
             f1_test = f1_score(y_test.cpu(), predictions_test.cpu(), average=None, zero_division=0)
 
-            cm_test = confusion_matrix(y_test, predictions_test,  labels=[0,1,2,3,4,5,6,7,8,9] )
+            cm_test = confusion_matrix(y_test.cpu(), predictions_test.cpu(),  labels=[0,1,2,3,4,5,6,7,8,9] )
             # Normalize the confusion matrix
             cm_test = cm_test.astype('float') / cm_test.sum(axis=1)[:, np.newaxis]
             # Plot confusion matrix
@@ -301,7 +326,7 @@ def train(
             image_test = image_test.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
             # print(f"\n Epoch no.: {epoch+1}" )
-            print(f"Accuracy Test = {accuracy_test*100:.2f}; Received {num_corrects}/{num_samples}")
+            print(f"Accuracy Test = {accuracy_test*100:.2f}; Received {num_corrects_test}/{num_samples_test}")
             print(f"Precision Test = {precision_test} and recall Test = {recall_test} \n f1 Test = {f1_test} \n")
 
             
@@ -387,6 +412,8 @@ if __name__ == "__main__":
                         default="weights", help="save directory.")
     parser.add_argument("--save_interval", type=int,
                         default=10, help="save interval.")
+    parser.add_argument("--sample_size", type=str,
+                        default="no", help="yes if sample size of the data, no if all of the data.")
     args = parser.parse_args()
 
     train(
@@ -399,5 +426,6 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         device=args.device,
         save_dir=args.save_dir,
-        save_interval=args.save_interval
+        save_interval=args.save_interval,
+        sample_size=args.sample_size
     )
