@@ -1,7 +1,11 @@
 #### Run Train:
 <!-- --device cuda -->
 ```terminal
-python train.py --batch_size 8 --num_epochs 4 --lr 1e-4 --num_workers 3  --device cpu --save_dir results --save_interval 2 --sample_size no
+python train.py --batch_size 16 --num_epochs 100 --lr 1e-4 --num_workers 4  --device cuda --save_dir results --save_interval 2 --sample_size no
+
+   colab
+!python3 train.py --batch_size 16 --num_epochs 100 --lr 1e-4 --num_workers 4  --device cuda --save_dir results --save_interval 2 --sample_size no
+
 ```
 
 #### Run Test:

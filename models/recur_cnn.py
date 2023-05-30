@@ -22,7 +22,8 @@ class RecurCNN(nn.Module):
         width,
         in_channels: int = 3,
         out_channels: int = 10,
-        iters = 3
+        iters = 3,
+        dropout_prob = 0.5
     ) -> None:
         """
         Init function.
@@ -43,6 +44,7 @@ class RecurCNN(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.iters = iters
+        self.dropout_prob = dropout_prob
 
 
         self.first_layer = nn.Sequential(
@@ -52,12 +54,14 @@ class RecurCNN(nn.Module):
             nn.Conv2d(32, 64,
                       kernel_size=3, stride=1, padding=1),
             nn.ReLU()
+            nn.Dropout2d(p=self.dropout_prob)
         )
 
         self.recur_layers = nn.Sequential(
             nn.Conv2d(64, 64,
                       kernel_size=3, stride=1, padding=1),
             nn.ReLU()
+            nn.Dropout2d(p=self.dropout_prob)
         )
 
         self.second_layer = nn.Sequential(
@@ -65,12 +69,14 @@ class RecurCNN(nn.Module):
             nn.MaxPool2d(kernel_size=3),
             nn.Conv2d(64, 128, kernel_size=3, stride=1),
             nn.ReLU(),
+            nn.Dropout2d(p=self.dropout_prob)
             nn.MaxPool2d(kernel_size=3)
         )
 
         self.linear = nn.Sequential(
             # nn.Flatten()
             nn.Linear(512,10)
+            nn.Dropout2d(p=self.dropout_prob)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
